@@ -1,0 +1,57 @@
+#==============================================================================
+# SHARED TERRAFORM VALIDATION WORKFLOW
+#==============================================================================
+
+name: Shared Terraform validation
+
+#==============================================================================
+# WORKFLOW INPUTS
+#==============================================================================
+
+on:
+  workflow_call:
+    inputs:
+      working_directory:
+        description: Terraform root or module directory to validate
+        required: true
+        type: string
+      terraform_version:
+        description: Terraform CLI version used by the validation job
+        required: false
+        type: string
+        default: 1.10.5
+
+#==============================================================================
+# WORKFLOW PERMISSIONS
+#==============================================================================
+
+permissions:
+  contents: read
+
+#==============================================================================
+# TERRAFORM VALIDATION
+#==============================================================================
+
+jobs:
+  validate:
+    name: Terraform validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd
+        with:
+          terraform_version: ${{ inputs.terraform_version }}
+
+      - name: Check formatting
+        run: terraform -chdir=${{ inputs.working_directory }} fmt -check -diff
+
+      - name: Initialise without backend
+        run: terraform -chdir=${{ inputs.working_directory }} init -backend=false -input=false
+
+      - name: Validate configuration
+        run: terraform -chdir=${{ inputs.working_directory }} validate -no-color

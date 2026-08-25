@@ -1,0 +1,40 @@
+#==============================================================================
+# PIPELINE TEMPLATE VALIDATION
+#==============================================================================
+
+name: Template validation
+
+#==============================================================================
+# WORKFLOW TRIGGERS
+#==============================================================================
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+#==============================================================================
+# WORKFLOW PERMISSIONS AND CONCURRENCY
+#==============================================================================
+
+permissions:
+  contents: read
+
+concurrency:
+  group: template-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+#==============================================================================
+# REUSABLE WORKFLOW TEST
+#==============================================================================
+
+jobs:
+  validate-template:
+    name: Validate reusable workflow
+    uses: ./.github/workflows/terraform-validate.yml
+    with:
+      working_directory: tests/fixtures/terraform-basic
+    permissions:
+      contents: read

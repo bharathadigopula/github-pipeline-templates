@@ -100,6 +100,7 @@ jobs:
         uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e
         with:
           terraform_version: ${{ inputs.terraform_version }}
+          terraform_wrapper: false
 
       - name: Validate deployment configuration
         if: inputs.operation != 'validate'
@@ -132,8 +133,8 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  approval:
-    name: Approve OCI bootstrap changes
+  apply:
+    name: Approve and apply OCI bootstrap changes
     needs: plan
     if: inputs.operation == 'apply' && needs.plan.outputs.has_changes == 'true'
     runs-on: ubuntu-latest
@@ -142,6 +143,14 @@ jobs:
     permissions:
       contents: read
       issues: write
+
+    env:
+      TF_IN_AUTOMATION: "true"
+      TF_INPUT: "false"
+      TF_OPERATION: apply
+      TF_APPROVERS: ${{ inputs.approvers }}
+      TF_WORKING_DIRECTORY: ${{ inputs.working_directory }}
+      TF_BACKEND_KEY: ${{ inputs.backend_key }}
 
     steps:
       - name: Request apply approval
@@ -156,28 +165,6 @@ jobs:
           fail-on-denial: true
           polling-interval-seconds: 30
 
-  apply:
-    name: Apply OCI bootstrap changes
-    needs:
-      - plan
-      - approval
-    if: inputs.operation == 'apply' && needs.plan.outputs.has_changes == 'true' && needs.approval.result == 'success'
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-
-    env:
-      TF_IN_AUTOMATION: "true"
-      TF_INPUT: "false"
-      TF_OPERATION: apply
-      TF_APPROVERS: ${{ inputs.approvers }}
-      TF_WORKING_DIRECTORY: ${{ inputs.working_directory }}
-      TF_BACKEND_KEY: ${{ inputs.backend_key }}
-      TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
-      OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
-      OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
-      OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
-
-    steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
@@ -192,12 +179,23 @@ jobs:
         uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e
         with:
           terraform_version: ${{ inputs.terraform_version }}
+          terraform_wrapper: false
 
       - name: Validate deployment configuration
         run: bash .pipeline-templates/scripts/terraform/validate-oci-bootstrap-inputs.sh
+        env:
+          TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
+          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+          OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
 
       - name: Configure OCI authentication
         run: bash .pipeline-templates/scripts/terraform/configure-oci-auth.sh
+        env:
+          TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
+          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+          OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
 
       - name: Initialise bootstrap with local state
         run: terraform -chdir="$TF_WORKING_DIRECTORY" init -backend=false -input=false

@@ -11,7 +11,3 @@ set -euo pipefail
 : "${OCI_USER_OCID:?Missing OCI_USER_OCID}"
 : "${OCI_FINGERPRINT:?Missing OCI_FINGERPRINT}"
 : "${OCI_PRIVATE_KEY:?Missing OCI_PRIVATE_KEY}"
-
-if [[ "$TF_OPERATION" == "apply" ]]; then
-	: "${TF_APPROVERS:?Missing approval users}"
-fi

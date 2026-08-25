@@ -12,9 +12,19 @@ on:
   workflow_call:
     inputs:
       operation:
-        description: Validate, plan, or apply the bootstrap configuration
+        description: Validate, plan, or plan with approval and apply
         required: true
         type: string
+      approvers:
+        description: Comma-separated GitHub users allowed to approve apply
+        required: false
+        type: string
+        default: ""
+      minimum_approvals:
+        description: Number of approvals required before apply
+        required: false
+        type: number
+        default: 1
       working_directory:
         description: Terraform bootstrap root directory
         required: true
@@ -51,19 +61,23 @@ permissions:
   contents: read
 
 #==============================================================================
-# BOOTSTRAP PLAN APPLY AND STATE MIGRATION
+# BOOTSTRAP PLAN APPROVAL APPLY AND STATE MIGRATION
 #==============================================================================
 
 jobs:
-  bootstrap:
+  plan:
     name: Terraform OCI bootstrap
     runs-on: ubuntu-latest
     timeout-minutes: 30
+
+    outputs:
+      has_changes: ${{ steps.plan.outputs.has_changes }}
 
     env:
       TF_IN_AUTOMATION: "true"
       TF_INPUT: "false"
       TF_OPERATION: ${{ inputs.operation }}
+      TF_APPROVERS: ${{ inputs.approvers }}
       TF_WORKING_DIRECTORY: ${{ inputs.working_directory }}
       TF_BACKEND_KEY: ${{ inputs.backend_key }}
       TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
@@ -104,28 +118,95 @@ jobs:
       - name: Validate bootstrap configuration
         run: terraform -chdir="$TF_WORKING_DIRECTORY" validate -no-color
 
-      - name: Create bootstrap plan
+      - name: Create and show bootstrap plan
+        id: plan
         if: inputs.operation != 'validate'
-        run: terraform -chdir="$TF_WORKING_DIRECTORY" plan -no-color -out=bootstrap.tfplan
+        run: bash .pipeline-templates/scripts/terraform/create-terraform-plan.sh "$TF_WORKING_DIRECTORY" bootstrap.tfplan
 
-      - name: Show bootstrap plan
-        if: inputs.operation != 'validate'
-        run: terraform -chdir="$TF_WORKING_DIRECTORY" show -no-color bootstrap.tfplan
+      - name: Upload bootstrap plan
+        if: inputs.operation != 'validate' && steps.plan.outputs.has_changes == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: oci-bootstrap-plan
+          path: ${{ inputs.working_directory }}/bootstrap.tfplan
+          if-no-files-found: error
+          retention-days: 1
 
-      - name: Apply bootstrap plan
-        if: inputs.operation == 'apply'
-        run: terraform -chdir="$TF_WORKING_DIRECTORY" apply -no-color -auto-approve bootstrap.tfplan
+  approval:
+    name: Approve OCI bootstrap changes
+    needs: plan
+    if: inputs.operation == 'apply' && needs.plan.outputs.has_changes == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
 
-      - name: Configure OCI state backend
-        if: inputs.operation == 'apply'
-        run: bash .pipeline-templates/scripts/terraform/configure-oci-bootstrap-backend.sh "$TF_WORKING_DIRECTORY" "$TF_BACKEND_KEY"
+    permissions:
+      contents: read
+      issues: write
 
-      - name: Migrate bootstrap state to OCI
-        if: inputs.operation == 'apply'
-        run: terraform -chdir="$TF_WORKING_DIRECTORY" init -migrate-state -force-copy -input=false -backend-config=backend.hcl
+    steps:
+      - name: Request apply approval
+        uses: trstringer/manual-approval@fa642940caf8412403569b28b2db4a1df08a83a3
+        with:
+          secret: ${{ github.token }}
+          approvers: ${{ inputs.approvers }}
+          minimum-approvals: ${{ inputs.minimum_approvals }}
+          issue-title: Approve OCI production bootstrap changes
+          issue-body: Review the Terraform plan in ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}. Approval applies the exact saved plan, including any creates, updates, or destroys.
+          exclude-workflow-initiator-as-approver: false
+          fail-on-denial: true
+          polling-interval-seconds: 30
 
-      - name: Verify remote bootstrap state
-        if: inputs.operation == 'apply'
-        run: |
-          terraform -chdir="$TF_WORKING_DIRECTORY" state list
-          terraform -chdir="$TF_WORKING_DIRECTORY" output -no-color
+  apply:
+    name: Apply OCI bootstrap changes
+    needs:
+      - plan
+      - approval
+    if: inputs.operation == 'apply' && needs.plan.outputs.has_changes == 'true' && needs.approval.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      TF_IN_AUTOMATION: "true"
+      TF_INPUT: "false"
+      TF_OPERATION: apply
+      TF_APPROVERS: ${{ inputs.approvers }}
+      TF_WORKING_DIRECTORY: ${{ inputs.working_directory }}
+      TF_BACKEND_KEY: ${{ inputs.backend_key }}
+      TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
+      OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
+      OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+      OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Checkout pipeline template scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: bharathadigopula/github-pipeline-templates
+          ref: ${{ inputs.template_ref }}
+          path: .pipeline-templates
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e
+        with:
+          terraform_version: ${{ inputs.terraform_version }}
+
+      - name: Validate deployment configuration
+        run: bash .pipeline-templates/scripts/terraform/validate-oci-bootstrap-inputs.sh
+
+      - name: Configure OCI authentication
+        run: bash .pipeline-templates/scripts/terraform/configure-oci-auth.sh
+
+      - name: Initialise bootstrap with local state
+        run: terraform -chdir="$TF_WORKING_DIRECTORY" init -backend=false -input=false
+
+      - name: Download bootstrap plan
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: oci-bootstrap-plan
+          path: ${{ inputs.working_directory }}
+
+      - name: Apply bootstrap plan and migrate state
+        run: bash .pipeline-templates/scripts/terraform/apply-oci-bootstrap-plan.sh "$TF_WORKING_DIRECTORY" "$TF_BACKEND_KEY" bootstrap.tfplan

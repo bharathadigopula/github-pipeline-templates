@@ -65,13 +65,13 @@ The consuming private repository supplies these secrets with `secrets: inherit`:
 ```yaml
 jobs:
   bootstrap:
-    uses: bharathadigopula/github-pipeline-templates/.github/workflows/terraform-oci-bootstrap.yml@v0.3.0
+    uses: bharathadigopula/github-pipeline-templates/.github/workflows/terraform-oci-bootstrap.yml@v0.3.1
     with:
       operation: apply
       approvers: bharathadigopula
       minimum_approvals: 1
       working_directory: bootstrap/prd
-      template_ref: v0.3.0
+      template_ref: v0.3.1
       terraform_version: 1.15.9
       backend_key: bootstrap/prd/terraform.tfstate
     secrets: inherit
@@ -80,9 +80,9 @@ jobs:
       issues: write
 ```
 
-For `plan` and `apply`, the bootstrap root must expose `state_bucket_name`, `object_storage_namespace`, and `region` outputs. Terraform detailed exit code `0` skips approval and apply. Exit code `2` uploads the saved plan and, for `apply`, opens an approval issue. Approval applies that exact saved plan, including any creates, updates, or destroys, generates a temporary `backend "oci"` override after the bucket exists, migrates state with `terraform init -migrate-state`, and verifies the remote state.
+For `plan` and `apply`, the bootstrap root must expose `state_bucket_name`, `object_storage_namespace`, and `region` outputs. The workflow disables the setup-terraform command wrapper so native Terraform detailed exit codes remain available. Exit code `0` skips the Apply job. Exit code `2` uploads the saved plan and starts Apply, whose first step opens an approval issue. Approval applies that exact saved plan, including any creates, updates, or destroys, generates a temporary `backend "oci"` override after the bucket exists, migrates state with `terraform init -migrate-state`, and verifies the remote state.
 
-The approval job receives `issues: write` only to create and monitor its approval issue. The plan artifact is retained for one day. OCI credentials are not available to the approval job.
+The Apply job receives `issues: write` only to create and monitor its approval issue. The plan artifact is retained for one day. OCI credentials are scoped to post-approval steps and are not available to the approval action.
 
 The `validate` operation is credential-free. This repository calls it against `tests/fixtures/terraform-basic` with `template_ref: ${{ github.sha }}` so pull requests test the workflow and scripts at the candidate commit.
 

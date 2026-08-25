@@ -12,19 +12,9 @@ on:
   workflow_call:
     inputs:
       operation:
-        description: Validate, plan, or plan with approval and apply
+        description: Validate, plan, or plan and apply
         required: true
         type: string
-      approvers:
-        description: Comma-separated GitHub users allowed to approve apply
-        required: false
-        type: string
-        default: ""
-      minimum_approvals:
-        description: Number of approvals required before apply
-        required: false
-        type: number
-        default: 1
       working_directory:
         description: Terraform bootstrap root directory
         required: true
@@ -61,7 +51,7 @@ permissions:
   contents: read
 
 #==============================================================================
-# BOOTSTRAP PLAN APPROVAL APPLY AND STATE MIGRATION
+# BOOTSTRAP PLAN APPLY AND STATE MIGRATION
 #==============================================================================
 
 jobs:
@@ -77,7 +67,6 @@ jobs:
       TF_IN_AUTOMATION: "true"
       TF_INPUT: "false"
       TF_OPERATION: ${{ inputs.operation }}
-      TF_APPROVERS: ${{ inputs.approvers }}
       TF_WORKING_DIRECTORY: ${{ inputs.working_directory }}
       TF_BACKEND_KEY: ${{ inputs.backend_key }}
       TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
@@ -134,37 +123,23 @@ jobs:
           retention-days: 1
 
   apply:
-    name: Approve and apply OCI bootstrap changes
+    name: Apply OCI bootstrap changes
     needs: plan
     if: inputs.operation == 'apply' && needs.plan.outputs.has_changes == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    timeout-minutes: 30
 
     permissions:
       contents: read
-      issues: write
 
     env:
       TF_IN_AUTOMATION: "true"
       TF_INPUT: "false"
       TF_OPERATION: apply
-      TF_APPROVERS: ${{ inputs.approvers }}
       TF_WORKING_DIRECTORY: ${{ inputs.working_directory }}
       TF_BACKEND_KEY: ${{ inputs.backend_key }}
 
     steps:
-      - name: Request apply approval
-        uses: trstringer/manual-approval@fa642940caf8412403569b28b2db4a1df08a83a3
-        with:
-          secret: ${{ github.token }}
-          approvers: ${{ inputs.approvers }}
-          minimum-approvals: ${{ inputs.minimum_approvals }}
-          issue-title: Approve OCI production bootstrap changes
-          issue-body: Review the Terraform plan in ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}. Approval applies the exact saved plan, including any creates, updates, or destroys.
-          exclude-workflow-initiator-as-approver: false
-          fail-on-denial: true
-          polling-interval-seconds: 30
-
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 

@@ -48,4 +48,3 @@ jobs:
       template_ref: ${{ github.sha }}
     permissions:
       contents: read
-      issues: write

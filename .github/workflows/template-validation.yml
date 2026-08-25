@@ -38,3 +38,13 @@ jobs:
       working_directory: tests/fixtures/terraform-basic
     permissions:
       contents: read
+
+  validate-oci-bootstrap-template:
+    name: Validate OCI bootstrap workflow
+    uses: ./.github/workflows/terraform-oci-bootstrap.yml
+    with:
+      operation: validate
+      working_directory: tests/fixtures/terraform-basic
+      template_ref: ${{ github.sha }}
+    permissions:
+      contents: read

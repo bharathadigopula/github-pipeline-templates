@@ -1,0 +1,131 @@
+#==============================================================================
+# SHARED OCI TERRAFORM BOOTSTRAP WORKFLOW
+#==============================================================================
+
+name: Shared OCI Terraform bootstrap
+
+#==============================================================================
+# WORKFLOW INPUTS AND SECRETS
+#==============================================================================
+
+on:
+  workflow_call:
+    inputs:
+      operation:
+        description: Validate, plan, or apply the bootstrap configuration
+        required: true
+        type: string
+      working_directory:
+        description: Terraform bootstrap root directory
+        required: true
+        type: string
+      template_ref:
+        description: Git ref containing the workflow support scripts
+        required: true
+        type: string
+      terraform_version:
+        description: Terraform CLI version with OCI backend support
+        required: false
+        type: string
+        default: 1.15.9
+      backend_key:
+        description: Object Storage key used for migrated bootstrap state
+        required: false
+        type: string
+        default: bootstrap/prd/terraform.tfstate
+    secrets:
+      OCI_TENANCY_OCID:
+        required: false
+      OCI_USER_OCID:
+        required: false
+      OCI_FINGERPRINT:
+        required: false
+      OCI_PRIVATE_KEY:
+        required: false
+
+#==============================================================================
+# WORKFLOW PERMISSIONS
+#==============================================================================
+
+permissions:
+  contents: read
+
+#==============================================================================
+# BOOTSTRAP PLAN APPLY AND STATE MIGRATION
+#==============================================================================
+
+jobs:
+  bootstrap:
+    name: Terraform OCI bootstrap
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      TF_IN_AUTOMATION: "true"
+      TF_INPUT: "false"
+      TF_OPERATION: ${{ inputs.operation }}
+      TF_WORKING_DIRECTORY: ${{ inputs.working_directory }}
+      TF_BACKEND_KEY: ${{ inputs.backend_key }}
+      TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
+      OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
+      OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+      OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Checkout pipeline template scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: bharathadigopula/github-pipeline-templates
+          ref: ${{ inputs.template_ref }}
+          path: .pipeline-templates
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e
+        with:
+          terraform_version: ${{ inputs.terraform_version }}
+
+      - name: Validate deployment configuration
+        if: inputs.operation != 'validate'
+        run: bash .pipeline-templates/scripts/terraform/validate-oci-bootstrap-inputs.sh
+
+      - name: Configure OCI authentication
+        if: inputs.operation != 'validate'
+        run: bash .pipeline-templates/scripts/terraform/configure-oci-auth.sh
+
+      - name: Initialise bootstrap with local state
+        run: terraform -chdir="$TF_WORKING_DIRECTORY" init -backend=false -input=false
+
+      - name: Check formatting
+        run: terraform -chdir="$TF_WORKING_DIRECTORY" fmt -check -diff
+
+      - name: Validate bootstrap configuration
+        run: terraform -chdir="$TF_WORKING_DIRECTORY" validate -no-color
+
+      - name: Create bootstrap plan
+        if: inputs.operation != 'validate'
+        run: terraform -chdir="$TF_WORKING_DIRECTORY" plan -no-color -out=bootstrap.tfplan
+
+      - name: Show bootstrap plan
+        if: inputs.operation != 'validate'
+        run: terraform -chdir="$TF_WORKING_DIRECTORY" show -no-color bootstrap.tfplan
+
+      - name: Apply bootstrap plan
+        if: inputs.operation == 'apply'
+        run: terraform -chdir="$TF_WORKING_DIRECTORY" apply -no-color -auto-approve bootstrap.tfplan
+
+      - name: Configure OCI state backend
+        if: inputs.operation == 'apply'
+        run: bash .pipeline-templates/scripts/terraform/configure-oci-bootstrap-backend.sh "$TF_WORKING_DIRECTORY" "$TF_BACKEND_KEY"
+
+      - name: Migrate bootstrap state to OCI
+        if: inputs.operation == 'apply'
+        run: terraform -chdir="$TF_WORKING_DIRECTORY" init -migrate-state -force-copy -input=false -backend-config=backend.hcl
+
+      - name: Verify remote bootstrap state
+        if: inputs.operation == 'apply'
+        run: |
+          terraform -chdir="$TF_WORKING_DIRECTORY" state list
+          terraform -chdir="$TF_WORKING_DIRECTORY" output -no-color

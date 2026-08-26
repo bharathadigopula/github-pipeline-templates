@@ -31,11 +31,18 @@ while IFS= read -r target; do
     exit 1
   fi
 
-  public_ip=$(oci compute instance list-vnics \
+  vnics=$(oci compute instance list-vnics \
     --all \
     --compartment-id "$OCI_COMPARTMENT_OCID" \
     --instance-id "$instance_id" \
-    --region "$OCI_REGION" | jq -r '[.data[] | select(."is-primary" == true)][0]."public-ip" // empty')
+    --region "$OCI_REGION")
+
+  if [[ $(jq '.data | length' <<< "$vnics") -ne 1 ]]; then
+    printf 'Expected exactly one VNIC for target %s.\n' "$target_name" >&2
+    exit 1
+  fi
+
+  public_ip=$(jq -r '.data[0]."public-ip" // empty' <<< "$vnics")
 
   if [[ -z "$public_ip" ]]; then
     printf 'No primary public IP was found for target %s.\n' "$target_name" >&2

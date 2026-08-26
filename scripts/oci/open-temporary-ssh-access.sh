@@ -20,11 +20,18 @@ nsg_candidates="$RUNNER_TEMP/nsg-candidates"
 : > "$nsg_candidates"
 
 while IFS= read -r instance_id; do
-  oci compute instance list-vnics \
+  vnics=$(oci compute instance list-vnics \
     --all \
     --compartment-id "$OCI_COMPARTMENT_OCID" \
     --instance-id "$instance_id" \
-    --region "$OCI_REGION" | jq -r '.data[] | select(."is-primary" == true) | ."nsg-ids"[]' >> "$nsg_candidates"
+    --region "$OCI_REGION")
+
+  if [[ $(jq '.data | length' <<< "$vnics") -ne 1 ]]; then
+    printf 'Expected exactly one VNIC for instance %s.\n' "$instance_id" >&2
+    exit 1
+  fi
+
+  jq -r '.data[0]."nsg-ids"[]' <<< "$vnics" >> "$nsg_candidates"
 done < <(jq -r '.[].instance_id' <<< "$SSH_COMMAND_TARGETS")
 
 server_nsg_id=$(sort "$nsg_candidates" | uniq -c | awk -v target_count="$target_count" '$1 == target_count { print $2 }')

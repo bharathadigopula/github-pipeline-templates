@@ -34,9 +34,31 @@ while IFS= read -r instance_id; do
   jq -r '.data[0]."nsg-ids"[]' <<< "$vnics" >> "$nsg_candidates"
 done < <(jq -r '.[].instance_id' <<< "$SSH_COMMAND_TARGETS")
 
-server_nsg_id=$(sort "$nsg_candidates" | uniq -c | awk -v target_count="$target_count" '$1 == target_count { print $2 }')
+common_nsg_ids=$(sort "$nsg_candidates" | uniq -c | awk -v target_count="$target_count" '$1 == target_count { print $2 }')
+ssh_nsg_candidates="$RUNNER_TEMP/ssh-nsg-candidates"
+: > "$ssh_nsg_candidates"
+
+while IFS= read -r common_nsg_id; do
+  [[ -n "$common_nsg_id" ]] || continue
+
+  rules=$(oci network nsg rules list \
+    --all \
+    --nsg-id "$common_nsg_id" \
+    --region "$OCI_REGION")
+
+  if jq -e 'any(.data[];
+    .direction == "INGRESS" and
+    .protocol == "6" and
+    (."tcp-options"."destination-port-range".min // 65536) <= 22 and
+    (."tcp-options"."destination-port-range".max // -1) >= 22
+  )' <<< "$rules" >/dev/null; then
+    printf '%s\n' "$common_nsg_id" >> "$ssh_nsg_candidates"
+  fi
+done <<< "$common_nsg_ids"
+
+server_nsg_id=$(cat "$ssh_nsg_candidates")
 if [[ $(wc -w <<< "$server_nsg_id") -ne 1 ]]; then
-  printf 'Unable to identify one NSG shared by every target.\n' >&2
+  printf 'Unable to identify one shared NSG with an existing SSH ingress rule.\n' >&2
   exit 1
 fi
 

@@ -39,6 +39,14 @@ jobs:
     permissions:
       contents: read
 
+  validate-shell-template:
+    name: Validate shell workflow
+    uses: ./.github/workflows/shell-validate.yml
+    with:
+      search_path: scripts
+    permissions:
+      contents: read
+
   validate-oci-bootstrap-template:
     name: Validate OCI bootstrap workflow
     uses: ./.github/workflows/terraform-oci-bootstrap.yml

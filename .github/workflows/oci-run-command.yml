@@ -1,0 +1,279 @@
+#==============================================================================
+# SHARED OCI RUN COMMAND WORKFLOW
+#==============================================================================
+
+name: Shared OCI Run Command
+
+#==============================================================================
+# WORKFLOW INPUTS AND SECRETS
+#==============================================================================
+
+on:
+  workflow_call:
+    inputs:
+      automation_repository:
+        description: Public repository containing versioned automation scripts
+        required: true
+        type: string
+      automation_ref:
+        description: Immutable release tag for the automation repository
+        required: true
+        type: string
+      compartment_ocid:
+        description: OCI compartment containing the target instances
+        required: true
+        type: string
+      display_name:
+        description: Safe display name used for OCI commands and artifacts
+        required: true
+        type: string
+      region:
+        description: OCI region identifier
+        required: true
+        type: string
+      script_path:
+        description: Host script path relative to the automation repository
+        required: true
+        type: string
+      targets_json:
+        description: JSON array containing target names, instance OCIDs, and script arguments
+        required: true
+        type: string
+      timeout_seconds:
+        description: Maximum execution time allowed on each instance
+        required: false
+        type: number
+        default: 300
+    secrets:
+      OCI_TENANCY_OCID:
+        required: true
+      OCI_USER_OCID:
+        required: true
+      OCI_FINGERPRINT:
+        required: true
+      OCI_PRIVATE_KEY:
+        required: true
+
+#==============================================================================
+# WORKFLOW PERMISSIONS
+#==============================================================================
+
+permissions:
+  contents: read
+
+#==============================================================================
+# VERSIONED HOST AUTOMATION
+#==============================================================================
+
+jobs:
+  run-command:
+    name: OCI Run Command
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    env:
+      OCI_CLI_VERSION: 3.91.0
+      OCI_COMPARTMENT_OCID: ${{ inputs.compartment_ocid }}
+      OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+      OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
+      OCI_REGION: ${{ inputs.region }}
+      OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+      OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
+      RUN_COMMAND_DISPLAY_NAME: ${{ inputs.display_name }}
+      RUN_COMMAND_RESULTS_DIRECTORY: ${{ github.workspace }}/run-command-results
+      RUN_COMMAND_SCRIPT_PATH: ${{ inputs.script_path }}
+      RUN_COMMAND_TARGETS: ${{ inputs.targets_json }}
+      RUN_COMMAND_TIMEOUT_SECONDS: ${{ inputs.timeout_seconds }}
+
+    steps:
+      - name: Validate immutable automation reference
+        env:
+          AUTOMATION_REF: ${{ inputs.automation_ref }}
+        run: |
+          if [[ ! "$AUTOMATION_REF" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            printf 'automation_ref must be an immutable semantic version tag.\n' >&2
+            exit 1
+          fi
+
+      - name: Checkout versioned host automation
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: ${{ inputs.automation_repository }}
+          ref: ${{ inputs.automation_ref }}
+          path: .host-automation
+
+      - name: Validate Run Command configuration
+        working-directory: .host-automation
+        run: |
+          required_variables=(
+            OCI_COMPARTMENT_OCID
+            OCI_FINGERPRINT
+            OCI_PRIVATE_KEY
+            OCI_REGION
+            OCI_TENANCY_OCID
+            OCI_USER_OCID
+            RUN_COMMAND_DISPLAY_NAME
+            RUN_COMMAND_SCRIPT_PATH
+            RUN_COMMAND_TARGETS
+            RUN_COMMAND_TIMEOUT_SECONDS
+          )
+
+          for variable_name in "${required_variables[@]}"; do
+            if [[ -z "${!variable_name:-}" ]]; then
+              printf 'Required value %s is empty.\n' "$variable_name" >&2
+              exit 1
+            fi
+          done
+
+          if [[ ! "$OCI_REGION" =~ ^[a-z]{2}-[a-z]+-[0-9]+$ ]]; then
+            printf 'OCI_REGION must be an OCI region identifier.\n' >&2
+            exit 1
+          fi
+
+          if [[ ! "$OCI_COMPARTMENT_OCID" =~ ^ocid1\.compartment\.oc1\.\.[a-z0-9]+$ ]]; then
+            printf 'OCI_COMPARTMENT_OCID must be a compartment OCID.\n' >&2
+            exit 1
+          fi
+
+          if [[ ! "$RUN_COMMAND_DISPLAY_NAME" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$ ]]; then
+            printf 'RUN_COMMAND_DISPLAY_NAME must use 1-64 safe name characters.\n' >&2
+            exit 1
+          fi
+
+          if [[ ! "$RUN_COMMAND_TIMEOUT_SECONDS" =~ ^[0-9]+$ ]] || (( RUN_COMMAND_TIMEOUT_SECONDS < 1 || RUN_COMMAND_TIMEOUT_SECONDS > 86400 )); then
+            printf 'RUN_COMMAND_TIMEOUT_SECONDS must be between 1 and 86400.\n' >&2
+            exit 1
+          fi
+
+          if [[ "$RUN_COMMAND_SCRIPT_PATH" = /* || "$RUN_COMMAND_SCRIPT_PATH" =~ (^|/)\.\.(/|$) ]]; then
+            printf 'RUN_COMMAND_SCRIPT_PATH must be a repository-relative path without parent traversal.\n' >&2
+            exit 1
+          fi
+
+          if [[ ! -f "$RUN_COMMAND_SCRIPT_PATH" ]]; then
+            printf 'Host script does not exist: %s\n' "$RUN_COMMAND_SCRIPT_PATH" >&2
+            exit 1
+          fi
+
+          if ! jq -e '
+            type == "array" and
+            length > 0 and
+            length <= 5 and
+            all(.[];
+              type == "object" and
+              (.name | type == "string" and test("^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$")) and
+              (.instance_id | type == "string" and test("^ocid1\\.instance\\.oc1\\.[a-z0-9.-]+$")) and
+              (.arguments | type == "array" and all(.[]; type == "string" and length <= 255))
+            )
+          ' <<< "$RUN_COMMAND_TARGETS" >/dev/null; then
+            printf 'RUN_COMMAND_TARGETS must contain one to five valid target entries.\n' >&2
+            exit 1
+          fi
+
+          bash -n "$RUN_COMMAND_SCRIPT_PATH"
+
+      - name: Install pinned OCI CLI
+        run: |
+          install_directory="$RUNNER_TEMP/oci-cli"
+          python3 -m venv "$install_directory"
+          "$install_directory/bin/python" -m pip install --disable-pip-version-check --quiet "oci-cli==$OCI_CLI_VERSION"
+          printf '%s\n' "$install_directory/bin" >> "$GITHUB_PATH"
+          "$install_directory/bin/oci" --version
+
+      - name: Configure OCI authentication
+        run: |
+          install -d -m 700 "$HOME/.oci"
+          printf '%s\n' "$OCI_PRIVATE_KEY" > "$HOME/.oci/api_key.pem"
+          chmod 600 "$HOME/.oci/api_key.pem"
+
+          {
+            printf '[DEFAULT]\n'
+            printf 'user=%s\n' "$OCI_USER_OCID"
+            printf 'fingerprint=%s\n' "$OCI_FINGERPRINT"
+            printf 'tenancy=%s\n' "$OCI_TENANCY_OCID"
+            printf 'region=%s\n' "$OCI_REGION"
+            printf 'key_file=%s\n' "$HOME/.oci/api_key.pem"
+          } > "$HOME/.oci/config"
+
+          chmod 600 "$HOME/.oci/config"
+
+      - name: Dispatch and wait for commands
+        working-directory: .host-automation
+        run: |
+          mkdir -p "$RUN_COMMAND_RESULTS_DIRECTORY"
+          overall_exit_code=0
+
+          while IFS= read -r target; do
+            target_name=$(jq -r '.name' <<< "$target")
+            instance_id=$(jq -r '.instance_id' <<< "$target")
+            argument_line=$(jq -r '[.arguments[] | @sh] | "set -- " + join(" ")' <<< "$target")
+            command_text=$(printf '%s\n%s' "$argument_line" "$(cat "$RUN_COMMAND_SCRIPT_PATH")")
+            command_size=$(printf '%s' "$command_text" | wc -c | tr -d ' ')
+
+            if (( command_size > 4096 )); then
+              printf 'Rendered command for %s exceeds the 4096-byte inline limit.\n' "$target_name" >&2
+              overall_exit_code=1
+              continue
+            fi
+
+            content=$(jq -n --arg text "$command_text" '{source: {sourceType: "TEXT", text: $text}, output: {outputType: "TEXT"}}')
+            target_payload=$(jq -n --arg instance_id "$instance_id" '{instanceId: $instance_id}')
+            response=$(oci instance-agent command create \
+              --compartment-id "$OCI_COMPARTMENT_OCID" \
+              --content "$content" \
+              --display-name "${RUN_COMMAND_DISPLAY_NAME}-${target_name}" \
+              --region "$OCI_REGION" \
+              --target "$target_payload" \
+              --timeout-in-seconds "$RUN_COMMAND_TIMEOUT_SECONDS")
+
+            command_id=$(jq -r '.data.id' <<< "$response")
+            if [[ -z "$command_id" || "$command_id" == "null" ]]; then
+              printf 'OCI did not return a command OCID for %s.\n' "$target_name" >&2
+              overall_exit_code=1
+              continue
+            fi
+
+            printf 'Dispatched %s to %s as %s.\n' "$RUN_COMMAND_DISPLAY_NAME" "$target_name" "$command_id"
+            deadline=$(( $(date +%s) + RUN_COMMAND_TIMEOUT_SECONDS + 600 ))
+            result_file="$RUN_COMMAND_RESULTS_DIRECTORY/${target_name}.json"
+            target_exit_code=1
+
+            while (( $(date +%s) < deadline )); do
+              execution=$(oci instance-agent command-execution get \
+                --command-id "$command_id" \
+                --instance-id "$instance_id" \
+                --region "$OCI_REGION")
+              lifecycle_state=$(jq -r '.data."lifecycle-state"' <<< "$execution")
+              printf 'Target %s is %s.\n' "$target_name" "$lifecycle_state"
+
+              case "$lifecycle_state" in
+                SUCCEEDED)
+                  printf '%s\n' "$execution" > "$result_file"
+                  target_exit_code=0
+                  break
+                  ;;
+                FAILED|TIMED_OUT|CANCELED)
+                  printf '%s\n' "$execution" > "$result_file"
+                  break
+                  ;;
+              esac
+
+              sleep 10
+            done
+
+            if (( target_exit_code != 0 )); then
+              printf 'Run Command did not succeed for %s.\n' "$target_name" >&2
+              overall_exit_code=1
+            fi
+          done < <(jq -c '.[]' <<< "$RUN_COMMAND_TARGETS")
+
+          exit "$overall_exit_code"
+
+      - name: Upload Run Command results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ${{ inputs.display_name }}-results
+          path: run-command-results
+          if-no-files-found: warn
+          retention-days: 7

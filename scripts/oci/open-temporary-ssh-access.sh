@@ -71,7 +71,7 @@ fi
 stale_rule_ids=$(oci network nsg rules list \
   --all \
   --nsg-id "$server_nsg_id" \
-  --region "$OCI_REGION" | jq -c --arg prefix "${SSH_COMMAND_DISPLAY_NAME}-" '[.data[] | select(.description | startswith($prefix)) | .id]')
+  --region "$OCI_REGION" | jq -c --arg prefix "${SSH_COMMAND_DISPLAY_NAME}-" '[.data[] | select((.description // "") | startswith($prefix)) | .id]')
 
 if [[ $(jq 'length' <<< "$stale_rule_ids") -gt 0 ]]; then
   oci network nsg rules remove \

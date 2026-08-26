@@ -6,6 +6,19 @@
 
 set -euo pipefail
 
+#==============================================================================
+# AUTHENTICATION INPUTS
+#==============================================================================
+
+: "${OCI_FINGERPRINT:?OCI_FINGERPRINT is required}"
+: "${OCI_PRIVATE_KEY:?OCI_PRIVATE_KEY is required}"
+: "${OCI_USER_OCID:?OCI_USER_OCID is required}"
+: "${TF_VAR_tenancy_ocid:?TF_VAR_tenancy_ocid is required}"
+
+#==============================================================================
+# OCI CONFIGURATION
+#==============================================================================
+
 install -d -m 700 "$HOME/.oci"
 printf '%s\n' "$OCI_PRIVATE_KEY" > "$HOME/.oci/api_key.pem"
 chmod 600 "$HOME/.oci/api_key.pem"

@@ -1,0 +1,60 @@
+#==============================================================================
+# SHARED SHELL VALIDATION WORKFLOW
+#==============================================================================
+
+name: Shared shell validation
+
+#==============================================================================
+# WORKFLOW INPUTS
+#==============================================================================
+
+on:
+  workflow_call:
+    inputs:
+      search_path:
+        description: Repository-relative directory containing shell scripts
+        required: false
+        type: string
+        default: scripts
+
+#==============================================================================
+# WORKFLOW PERMISSIONS
+#==============================================================================
+
+permissions:
+  contents: read
+
+#==============================================================================
+# SHELL VALIDATION
+#==============================================================================
+
+jobs:
+  validate:
+    name: Validate shell scripts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Validate script syntax
+        env:
+          SEARCH_PATH: ${{ inputs.search_path }}
+        run: |
+          if [[ ! -d "$SEARCH_PATH" ]]; then
+            printf 'Shell script directory does not exist: %s\n' "$SEARCH_PATH" >&2
+            exit 1
+          fi
+
+          script_count=0
+          while IFS= read -r -d '' script_file; do
+            bash -n "$script_file"
+            shellcheck "$script_file"
+            script_count=$((script_count + 1))
+          done < <(find "$SEARCH_PATH" -type f -name '*.sh' -print0)
+
+          if (( script_count == 0 )); then
+            printf 'No shell scripts found under %s.\n' "$SEARCH_PATH" >&2
+            exit 1
+          fi

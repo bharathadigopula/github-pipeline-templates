@@ -64,7 +64,7 @@ while IFS= read -r target; do
     case "$lifecycle_state" in
       SUCCEEDED)
         printf '%s\n' "$execution" > "$result_file"
-        command_output=$(jq -r '.data.content.output // ""' <<< "$execution")
+        command_output=$(jq -r '.data.content.text // ""' <<< "$execution")
         if [[ -n "${RUN_COMMAND_REQUIRED_OUTPUT_MARKER:-}" ]] && ! grep -Fq "$RUN_COMMAND_REQUIRED_OUTPUT_MARKER" <<< "$command_output"; then
           printf 'Required output marker is missing for %s.\n' "$target_name" >&2
         else

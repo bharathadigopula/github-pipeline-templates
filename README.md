@@ -106,7 +106,7 @@ The `validate` operation is credential-free. This repository calls it against `t
 | `backend_config_file` | No | `backend.hcl.example` | Backend configuration file relative to the Terraform root |
 | `cloudflare_account_id` | No | Empty | Cloudflare account identifier exposed as `TF_VAR_cloudflare_account_id` for roots that manage Cloudflare resources |
 
-The OCI deployment workflow requires the four OCI secrets listed above. `SSH_ALLOWED_CIDR` is required only by roots that declare `ssh_allowed_cidr`, `SSH_PUBLIC_KEY` is required only by roots that declare `ssh_public_key`, and `BUDGET_ALERT_RECIPIENTS` is required only by roots that declare `budget_alert_recipients`. Roots that use the Cloudflare provider pass the optional `CLOUDFLARE_API_TOKEN` secret; the workflow exposes it only as the provider environment variable in Plan and Apply jobs.
+The OCI deployment workflow requires the four OCI secrets listed above. `SSH_ALLOWED_CIDR` is required only by roots that declare `ssh_allowed_cidr`, `SSH_PUBLIC_KEY` is required only by roots that declare `ssh_public_key`, and `BUDGET_ALERT_RECIPIENTS` is required only by roots that declare `budget_alert_recipients`. Roots that use the Cloudflare provider pass the optional `CLOUDFLARE_API_TOKEN` secret; the workflow exposes it only as the provider environment variable in Plan and Apply jobs. Roots that create a Jenkins credential bundle can pass the optional `JENKINS_GITHUB_TOKEN` secret, which is exposed only as the sensitive `TF_VAR_jenkins_github_token` variable in Plan and Apply jobs.
 
 ```yaml
 jobs:

@@ -55,6 +55,8 @@ on:
         required: false
       CLOUDFLARE_API_TOKEN:
         required: false
+      JENKINS_GITHUB_TOKEN:
+        required: false
 
 #==============================================================================
 # WORKFLOW PERMISSIONS
@@ -87,6 +89,7 @@ jobs:
       TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
       TF_VAR_budget_alert_recipients: ${{ secrets.BUDGET_ALERT_RECIPIENTS }}
       TF_VAR_cloudflare_account_id: ${{ inputs.cloudflare_account_id }}
+      TF_VAR_jenkins_github_token: ${{ secrets.JENKINS_GITHUB_TOKEN }}
       TF_VAR_oci_user_ocid: ${{ secrets.OCI_USER_OCID }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
@@ -159,6 +162,7 @@ jobs:
       TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
       TF_VAR_budget_alert_recipients: ${{ secrets.BUDGET_ALERT_RECIPIENTS }}
       TF_VAR_cloudflare_account_id: ${{ inputs.cloudflare_account_id }}
+      TF_VAR_jenkins_github_token: ${{ secrets.JENKINS_GITHUB_TOKEN }}
       TF_VAR_oci_user_ocid: ${{ secrets.OCI_USER_OCID }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}

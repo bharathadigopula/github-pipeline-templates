@@ -53,6 +53,11 @@ on:
         required: false
         type: number
         default: 300
+      vault_secret_name:
+        description: OCI Vault secret whose current value is appended as the final script argument
+        required: false
+        type: string
+        default: ""
     secrets:
       OCI_TENANCY_OCID:
         required: true
@@ -96,6 +101,7 @@ jobs:
       RUN_COMMAND_SCRIPT_PATH: ${{ inputs.script_path }}
       RUN_COMMAND_TARGETS: ${{ inputs.targets_json }}
       RUN_COMMAND_TIMEOUT_SECONDS: ${{ inputs.timeout_seconds }}
+      RUN_COMMAND_VAULT_SECRET_NAME: ${{ inputs.vault_secret_name }}
       TEMPLATE_REF: ${{ inputs.template_ref }}
 
     steps:
@@ -121,6 +127,10 @@ jobs:
 
       - name: Configure OCI authentication
         run: bash .pipeline-templates/scripts/oci/configure-auth.sh
+
+      - name: Load protected script argument
+        if: inputs.vault_secret_name != ''
+        run: bash .pipeline-templates/scripts/oci/load-vault-secret-argument.sh
 
       - name: Dispatch and wait for commands
         run: bash .pipeline-templates/scripts/oci/execute-run-command.sh

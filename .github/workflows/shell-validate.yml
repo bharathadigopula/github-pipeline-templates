@@ -16,6 +16,11 @@ on:
         required: false
         type: string
         default: scripts
+      template_ref:
+        description: Git ref containing the workflow support scripts
+        required: false
+        type: string
+        default: v0.8.0
 
 #==============================================================================
 # WORKFLOW PERMISSIONS
@@ -38,23 +43,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
+      - name: Checkout pipeline template scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: bharathadigopula/github-pipeline-templates
+          ref: ${{ inputs.template_ref }}
+          path: .pipeline-templates
+
       - name: Validate script syntax
         env:
           SEARCH_PATH: ${{ inputs.search_path }}
-        run: |
-          if [[ ! -d "$SEARCH_PATH" ]]; then
-            printf 'Shell script directory does not exist: %s\n' "$SEARCH_PATH" >&2
-            exit 1
-          fi
-
-          script_count=0
-          while IFS= read -r -d '' script_file; do
-            bash -n "$script_file"
-            shellcheck "$script_file"
-            script_count=$((script_count + 1))
-          done < <(find "$SEARCH_PATH" -type f -name '*.sh' -print0)
-
-          if (( script_count == 0 )); then
-            printf 'No shell scripts found under %s.\n' "$SEARCH_PATH" >&2
-            exit 1
-          fi
+        run: bash .pipeline-templates/scripts/validation/validate-shell.sh

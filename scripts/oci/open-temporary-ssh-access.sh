@@ -68,6 +68,18 @@ if [[ ! "$runner_ip" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
   exit 1
 fi
 
+stale_rule_ids=$(oci network nsg rules list \
+  --all \
+  --nsg-id "$server_nsg_id" \
+  --region "$OCI_REGION" | jq -c --arg prefix "${SSH_COMMAND_DISPLAY_NAME}-" '[.data[] | select(.description | startswith($prefix)) | .id]')
+
+if [[ $(jq 'length' <<< "$stale_rule_ids") -gt 0 ]]; then
+  oci network nsg rules remove \
+    --nsg-id "$server_nsg_id" \
+    --region "$OCI_REGION" \
+    --security-rule-ids "$stale_rule_ids"
+fi
+
 description="${SSH_COMMAND_DISPLAY_NAME}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
 {
   printf 'description=%s\n' "$description"
@@ -82,7 +94,7 @@ response=$(oci network nsg rules add \
   --nsg-id "$server_nsg_id" \
   --region "$OCI_REGION" \
   --security-rules "$rules")
-rule_id=$(jq -r '.data[0].id // empty' <<< "$response")
+rule_id=$(jq -r '.data."security-rules"[0].id // empty' <<< "$response")
 
 if [[ -z "$rule_id" ]]; then
   printf 'OCI did not return the temporary SSH security rule ID.\n' >&2

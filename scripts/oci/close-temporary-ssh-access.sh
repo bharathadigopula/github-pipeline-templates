@@ -25,7 +25,6 @@ if [[ $(jq 'length' <<< "$rule_ids") -eq 0 ]]; then
 fi
 
 oci network nsg rules remove \
-  --force \
   --nsg-id "$NSG_ID" \
   --region "$OCI_REGION" \
   --security-rule-ids "$rule_ids"

@@ -75,6 +75,9 @@ jobs:
     name: OCI SSH command
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    concurrency:
+      group: oci-ssh-command-${{ inputs.display_name }}
+      cancel-in-progress: false
 
     env:
       AUTOMATION_DIRECTORY: ${{ github.workspace }}/.host-automation

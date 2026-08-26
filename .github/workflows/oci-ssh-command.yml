@@ -1,8 +1,8 @@
 #==============================================================================
-# SHARED OCI RUN COMMAND WORKFLOW
+# SHARED OCI SSH COMMAND WORKFLOW
 #==============================================================================
 
-name: Shared OCI Run Command
+name: Shared OCI SSH command
 
 #==============================================================================
 # WORKFLOW INPUTS AND SECRETS
@@ -28,7 +28,7 @@ on:
         required: true
         type: string
       display_name:
-        description: Safe display name used for OCI commands and artifacts
+        description: Safe name used for temporary access and artifacts
         required: true
         type: string
       region:
@@ -36,23 +36,17 @@ on:
         required: true
         type: string
       required_output_marker:
-        description: Output marker required from every successful target
-        required: false
+        description: Output marker required from every target
+        required: true
         type: string
-        default: ""
       script_path:
         description: Host script path relative to the automation repository
         required: true
         type: string
       targets_json:
-        description: JSON array containing target names, instance OCIDs, and script arguments
+        description: JSON array containing target names, instance OCIDs, SSH users, and script arguments
         required: true
         type: string
-      timeout_seconds:
-        description: Maximum execution time allowed on each instance
-        required: false
-        type: number
-        default: 300
     secrets:
       OCI_TENANCY_OCID:
         required: true
@@ -61,6 +55,8 @@ on:
       OCI_FINGERPRINT:
         required: true
       OCI_PRIVATE_KEY:
+        required: true
+      SSH_PRIVATE_KEY:
         required: true
 
 #==============================================================================
@@ -71,14 +67,14 @@ permissions:
   contents: read
 
 #==============================================================================
-# VERSIONED HOST AUTOMATION
+# VERSIONED SSH AUTOMATION
 #==============================================================================
 
 jobs:
-  run-command:
-    name: OCI Run Command
+  ssh-command:
+    name: OCI SSH command
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 30
 
     env:
       AUTOMATION_DIRECTORY: ${{ github.workspace }}/.host-automation
@@ -90,12 +86,12 @@ jobs:
       OCI_REGION: ${{ inputs.region }}
       OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
       OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
-      RUN_COMMAND_DISPLAY_NAME: ${{ inputs.display_name }}
-      RUN_COMMAND_REQUIRED_OUTPUT_MARKER: ${{ inputs.required_output_marker }}
-      RUN_COMMAND_RESULTS_DIRECTORY: ${{ github.workspace }}/run-command-results
-      RUN_COMMAND_SCRIPT_PATH: ${{ inputs.script_path }}
-      RUN_COMMAND_TARGETS: ${{ inputs.targets_json }}
-      RUN_COMMAND_TIMEOUT_SECONDS: ${{ inputs.timeout_seconds }}
+      REQUIRED_OUTPUT_MARKER: ${{ inputs.required_output_marker }}
+      SSH_COMMAND_DISPLAY_NAME: ${{ inputs.display_name }}
+      SSH_COMMAND_RESULTS_DIRECTORY: ${{ github.workspace }}/ssh-command-results
+      SSH_COMMAND_SCRIPT_PATH: ${{ inputs.script_path }}
+      SSH_COMMAND_TARGETS: ${{ inputs.targets_json }}
+      SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
       TEMPLATE_REF: ${{ inputs.template_ref }}
 
     steps:
@@ -113,8 +109,8 @@ jobs:
           ref: ${{ inputs.automation_ref }}
           path: .host-automation
 
-      - name: Validate Run Command configuration
-        run: bash .pipeline-templates/scripts/oci/validate-run-command.sh
+      - name: Validate SSH command configuration
+        run: bash .pipeline-templates/scripts/oci/validate-ssh-command.sh
 
       - name: Install pinned OCI CLI
         run: bash .pipeline-templates/scripts/oci/install-cli.sh
@@ -122,14 +118,29 @@ jobs:
       - name: Configure OCI authentication
         run: bash .pipeline-templates/scripts/oci/configure-auth.sh
 
-      - name: Dispatch and wait for commands
-        run: bash .pipeline-templates/scripts/oci/execute-run-command.sh
+      - name: Configure host SSH key
+        run: bash .pipeline-templates/scripts/oci/configure-ssh-key.sh
 
-      - name: Upload Run Command results
+      - name: Open temporary SSH access
+        id: access
+        run: bash .pipeline-templates/scripts/oci/open-temporary-ssh-access.sh
+
+      - name: Execute versioned SSH automation
+        run: bash .pipeline-templates/scripts/oci/execute-ssh-command.sh
+
+      - name: Close temporary SSH access
+        if: always() && steps.access.outputs.nsg_id != ''
+        env:
+          NSG_ID: ${{ steps.access.outputs.nsg_id }}
+          RULE_DESCRIPTION: ${{ steps.access.outputs.description }}
+          RULE_ID: ${{ steps.access.outputs.rule_id }}
+        run: bash .pipeline-templates/scripts/oci/close-temporary-ssh-access.sh
+
+      - name: Upload SSH command results
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: ${{ inputs.display_name }}-results
-          path: run-command-results
+          path: ${{ env.SSH_COMMAND_RESULTS_DIRECTORY }}
           if-no-files-found: warn
           retention-days: 7

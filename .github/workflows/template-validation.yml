@@ -48,6 +48,18 @@ jobs:
     permissions:
       contents: read
 
+  validate-run-command-secrets:
+    name: Validate Run Command secret ordering
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Test ordered secret arguments
+        run: bash tests/test-run-command-secret-order.sh
+
   validate-oci-bootstrap-template:
     name: Validate OCI bootstrap workflow
     uses: ./.github/workflows/terraform-oci-bootstrap.yml

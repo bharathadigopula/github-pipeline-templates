@@ -102,6 +102,7 @@ jobs:
       RUN_COMMAND_TARGETS: ${{ inputs.targets_json }}
       RUN_COMMAND_TIMEOUT_SECONDS: ${{ inputs.timeout_seconds }}
       RUN_COMMAND_VAULT_SECRET_NAME: ${{ inputs.vault_secret_name }}
+      SUPPRESS_LABEL_WARNING: "True"
       TEMPLATE_REF: ${{ inputs.template_ref }}
 
     steps:

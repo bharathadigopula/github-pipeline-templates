@@ -58,6 +58,11 @@ on:
         required: false
         type: string
         default: ""
+      additional_vault_secret_name:
+        description: Optional second OCI Vault secret appended after the primary secret argument
+        required: false
+        type: string
+        default: ""
     secrets:
       OCI_TENANCY_OCID:
         required: true
@@ -101,6 +106,7 @@ jobs:
       RUN_COMMAND_SCRIPT_PATH: ${{ inputs.script_path }}
       RUN_COMMAND_TARGETS: ${{ inputs.targets_json }}
       RUN_COMMAND_TIMEOUT_SECONDS: ${{ inputs.timeout_seconds }}
+      RUN_COMMAND_ADDITIONAL_VAULT_SECRET_NAME: ${{ inputs.additional_vault_secret_name }}
       RUN_COMMAND_VAULT_SECRET_NAME: ${{ inputs.vault_secret_name }}
       SUPPRESS_LABEL_WARNING: "True"
       TEMPLATE_REF: ${{ inputs.template_ref }}
@@ -130,7 +136,7 @@ jobs:
         run: bash .pipeline-templates/scripts/oci/configure-auth.sh
 
       - name: Load protected script argument
-        if: inputs.vault_secret_name != ''
+        if: inputs.vault_secret_name != '' || inputs.additional_vault_secret_name != ''
         run: bash .pipeline-templates/scripts/oci/load-vault-secret-argument.sh
 
       - name: Dispatch and wait for commands

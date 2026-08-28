@@ -28,6 +28,9 @@ while IFS= read -r target; do
   if [[ -n "${RUN_COMMAND_ADDITIONAL_SECRET_ARGUMENT:-}" ]]; then
     arguments=$(jq -c --arg secret_argument "$RUN_COMMAND_ADDITIONAL_SECRET_ARGUMENT" '. + [$secret_argument]' <<< "$arguments")
   fi
+  if [[ -n "${RUN_COMMAND_TERTIARY_SECRET_ARGUMENT:-}" ]]; then
+    arguments=$(jq -c --arg secret_argument "$RUN_COMMAND_TERTIARY_SECRET_ARGUMENT" '. + [$secret_argument]' <<< "$arguments")
+  fi
   argument_line=$(jq -r '[.[] | @sh] | "set -- " + join(" ")' <<< "$arguments")
   command_text=$(printf '%s\n%s' "$argument_line" "$(cat "$AUTOMATION_DIRECTORY/$RUN_COMMAND_SCRIPT_PATH")")
   command_size=$(printf '%s' "$command_text" | wc -c | tr -d ' ')

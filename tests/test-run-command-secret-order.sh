@@ -33,6 +33,8 @@ if [[ "$1 $2 $3" == "vault secret list" ]]; then
     printf '{"data":[{"id":"ocid1.vaultsecret.oc1.primary","secret-name":"primary-name","lifecycle-state":"ACTIVE"}]}\n'
   elif [[ "$*" == *"additional-name"* ]]; then
     printf '{"data":[{"id":"ocid1.vaultsecret.oc1.additional","secret-name":"additional-name","lifecycle-state":"ACTIVE"}]}\n'
+  elif [[ "$*" == *"tertiary-name"* ]]; then
+    printf '{"data":[{"id":"ocid1.vaultsecret.oc1.tertiary","secret-name":"tertiary-name","lifecycle-state":"ACTIVE"}]}\n'
   else
     printf '{"data":[]}\n'
   fi
@@ -41,6 +43,8 @@ elif [[ "$1 $2 $3" == "secrets secret-bundle get" ]]; then
     printf '{"data":{"secret-bundle-content":{"content":"cHJpbWFyeS1zZWNyZXQ="}}}\n'
   elif [[ "$*" == *"ocid1.vaultsecret.oc1.additional"* ]]; then
     printf '{"data":{"secret-bundle-content":{"content":"YWRkaXRpb25hbC1zZWNyZXQ="}}}\n'
+  elif [[ "$*" == *"ocid1.vaultsecret.oc1.tertiary"* ]]; then
+    printf '{"data":{"secret-bundle-content":{"content":"dGVydGlhcnktc2VjcmV0"}}}\n'
   else
     exit 1
   fi
@@ -77,6 +81,7 @@ export RUN_COMMAND_DISPLAY_NAME="secret-order"
 export RUN_COMMAND_REQUIRED_OUTPUT_MARKER="test_marker=ready"
 export RUN_COMMAND_RESULTS_DIRECTORY="$temporary_root/results"
 export RUN_COMMAND_SCRIPT_PATH="bootstrap.sh"
+export RUN_COMMAND_TERTIARY_VAULT_SECRET_NAME="tertiary-name"
 export RUN_COMMAND_TARGETS='[{"name":"target","instance_id":"ocid1.instance.oc1.ap-hyderabad-1.test","arguments":["base"]}]'
 export RUN_COMMAND_TIMEOUT_SECONDS=30
 export RUN_COMMAND_VAULT_SECRET_NAME="primary-name"
@@ -93,7 +98,7 @@ bash "$repository_root/scripts/oci/execute-run-command.sh"
 #==============================================================================
 
 command_text=$(jq -r '.source.text' "$CAPTURED_CONTENT")
-expected_line="set -- 'base' 'primary-secret' 'additional-secret'"
+expected_line="set -- 'base' 'primary-secret' 'additional-secret' 'tertiary-secret'"
 if [[ "${command_text%%$'\n'*}" != "$expected_line" ]]; then
   printf 'Run Command secret arguments were appended in the wrong order.\n' >&2
   exit 1

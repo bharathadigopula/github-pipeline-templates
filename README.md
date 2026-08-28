@@ -21,7 +21,7 @@ AVAILABLE TEMPLATES
 | `.github/workflows/terraform-validate.yml` | Credential-free Terraform formatting, backend-disabled initialisation, and validation |
 | `.github/workflows/terraform-oci-bootstrap.yml` | OCI bootstrap plan and optional exact saved-plan apply using either initial local state or an existing OCI Object Storage backend |
 | `.github/workflows/terraform-oci.yml` | Remote-state OCI plan and optional exact saved-plan apply for established Terraform layers |
-| `.github/workflows/oci-run-command.yml` | Execute versioned host automation on up to five OCI instances with up to two ordered OCI Vault secret arguments |
+| `.github/workflows/oci-run-command.yml` | Execute versioned host automation on up to five OCI instances with up to three ordered OCI Vault secret arguments |
 
 <!--
 ==============================================================================
@@ -43,7 +43,7 @@ SUPPORT SCRIPTS
 | `scripts/oci/validate-run-command.sh` | Validate immutable references, target JSON, timeouts, and the selected automation script |
 | `scripts/oci/install-cli.sh` | Install the pinned OCI CLI used by Run Command jobs |
 | `scripts/oci/configure-auth.sh` | Materialise the OCI runner profile used by Run Command jobs |
-| `scripts/oci/load-vault-secret-argument.sh` | Retrieve, mask, and export one or two active OCI Vault secrets as ordered protected arguments |
+| `scripts/oci/load-vault-secret-argument.sh` | Retrieve, mask, and export up to three active OCI Vault secrets as ordered protected arguments |
 | `scripts/oci/execute-run-command.sh` | Render, dispatch, monitor, and verify OCI Run Command executions |
 
 Reusable workflows check out the consumer repository by default. The OCI bootstrap workflow therefore checks out this template repository separately at `template_ref` into `.pipeline-templates` before invoking its scripts.
@@ -191,11 +191,12 @@ The Run Command workflow checks out an immutable host-automation release, valida
 | `timeout_seconds` | No | `300` | Per-instance OCI command timeout, from 1 to 86,400 seconds |
 | `vault_secret_name` | No | Empty | Primary active OCI Vault secret appended after the configured target arguments |
 | `additional_vault_secret_name` | No | Empty | Second active OCI Vault secret appended after the primary secret |
+| `tertiary_vault_secret_name` | No | Empty | Third active OCI Vault secret appended after the additional secret |
 
 ```yaml
 jobs:
   configure:
-    uses: bharathadigopula/github-pipeline-templates/.github/workflows/oci-run-command.yml@v0.8.9
+    uses: bharathadigopula/github-pipeline-templates/.github/workflows/oci-run-command.yml@v0.8.10
     with:
       automation_repository: bharathadigopula/shared-host-automation
       automation_ref: v0.3.1
@@ -207,7 +208,7 @@ jobs:
       targets_json: ${{ needs.prepare.outputs.connector_targets }}
       timeout_seconds: 300
       vault_secret_name: bharathcloudops-prd-hyd-cloudflare-tunnel-token
-      template_ref: v0.8.9
+      template_ref: v0.8.10
     secrets: inherit
     permissions:
       contents: read
@@ -215,7 +216,7 @@ jobs:
 
 `automation_ref` and `template_ref` must be semantic version tags. Each target argument is limited to 255 characters, and the complete rendered inline command must not exceed OCI's 4,096-byte limit.
 
-For each configured Vault name, the workflow requires exactly one matching active secret. It reads the current bundle, base64-decodes the content, rejects empty, multiline, or values longer than 255 characters, and masks the result. The primary value is appended first and the additional value second; neither value is placed in `targets_json` or uploaded as an artifact.
+For each configured Vault name, the workflow requires exactly one matching active secret. It reads the current bundle, base64-decodes the content, rejects empty, multiline, or values longer than 255 characters, and masks the result. The primary, additional, and tertiary values are appended in that order; none is placed in `targets_json` or uploaded as an artifact.
 
 The workflow uploads per-target command results for seven days. A target succeeds only when OCI reports `SUCCEEDED` and, when configured, the required output marker appears in its output.
 
@@ -234,7 +235,7 @@ terraform -chdir=tests/fixtures/terraform-basic init -backend=false -input=false
 terraform -chdir=tests/fixtures/terraform-basic validate -no-color
 ```
 
-The Run Command regression test uses an OCI CLI test double to resolve two independent Vault bundles and assert the final order: target arguments, primary secret, additional secret.
+The Run Command regression test uses an OCI CLI test double to resolve three independent Vault bundles and assert the final order: target arguments, primary secret, additional secret, tertiary secret.
 
 <!--
 ==============================================================================

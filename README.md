@@ -48,6 +48,8 @@ SUPPORT SCRIPTS
 
 Reusable workflows check out the consumer repository by default. The OCI bootstrap workflow therefore checks out this template repository separately at `template_ref` into `.pipeline-templates` before invoking its scripts.
 
+Jenkins validates this repository from `.jenkins/pipelines/validate.groovy` using `jenkins-pipeline-templates v1.3.0`. The job runs on the `platform` agent, enables ANSI console rendering, and performs shell, workflow, and repository validation without deployment credentials.
+
 <!--
 ==============================================================================
 TERRAFORM VALIDATION INPUTS
@@ -64,7 +66,7 @@ TERRAFORM VALIDATION INPUTS
 ```yaml
 jobs:
   validate:
-    uses: bharathadigopula/github-pipeline-templates/.github/workflows/terraform-validate.yml@v0.2.0
+    uses: bharathadigopula/github-pipeline-templates/.github/workflows/terraform-validate.yml@v0.8.11
     with:
       working_directory: network/prd
       terraform_version: 1.15.9
@@ -104,11 +106,11 @@ The consuming private repository supplies these secrets with `secrets: inherit`:
 ```yaml
 jobs:
   bootstrap:
-    uses: bharathadigopula/github-pipeline-templates/.github/workflows/terraform-oci-bootstrap.yml@v0.6.0
+    uses: bharathadigopula/github-pipeline-templates/.github/workflows/terraform-oci-bootstrap.yml@v0.8.11
     with:
       operation: ${{ inputs.apply && 'apply' || 'plan' }}
       working_directory: bootstrap/prd
-      template_ref: v0.6.0
+      template_ref: v0.8.11
       terraform_version: 1.15.9
       backend_key: bootstrap/prd/terraform.tfstate
       backend_config_file: backend.hcl.example
@@ -153,11 +155,11 @@ The OCI deployment workflow requires the four OCI secrets listed above. `SSH_ALL
 ```yaml
 jobs:
   network:
-    uses: bharathadigopula/github-pipeline-templates/.github/workflows/terraform-oci.yml@v0.6.0
+    uses: bharathadigopula/github-pipeline-templates/.github/workflows/terraform-oci.yml@v0.8.11
     with:
       operation: ${{ inputs.apply && 'apply' || 'plan' }}
       working_directory: network/prd
-      template_ref: v0.6.0
+      template_ref: v0.8.11
       terraform_version: 1.15.9
       backend_config_file: backend.hcl.example
     secrets: inherit
@@ -196,7 +198,7 @@ The Run Command workflow checks out an immutable host-automation release, valida
 ```yaml
 jobs:
   configure:
-    uses: bharathadigopula/github-pipeline-templates/.github/workflows/oci-run-command.yml@v0.8.10
+    uses: bharathadigopula/github-pipeline-templates/.github/workflows/oci-run-command.yml@v0.8.11
     with:
       automation_repository: bharathadigopula/shared-host-automation
       automation_ref: v0.3.1
@@ -208,7 +210,7 @@ jobs:
       targets_json: ${{ needs.prepare.outputs.connector_targets }}
       timeout_seconds: 300
       vault_secret_name: bharathcloudops-prd-hyd-cloudflare-tunnel-token
-      template_ref: v0.8.10
+      template_ref: v0.8.11
     secrets: inherit
     permissions:
       contents: read

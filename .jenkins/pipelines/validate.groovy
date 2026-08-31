@@ -2,7 +2,7 @@
 // GITHUB PIPELINE TEMPLATE VALIDATION
 //==============================================================================
 
-@Library('jenkins-pipeline-templates@v1.2.0') _
+@Library('jenkins-pipeline-templates@v1.3.0') _
 
 repositoryValidationPipeline(
     shellSearchPath: 'scripts',

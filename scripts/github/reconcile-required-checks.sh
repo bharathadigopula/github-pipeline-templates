@@ -18,6 +18,7 @@ repositories=(
   jenkins-controller-automation
   jenkins-pipeline-templates
   monitoring-stack-automation
+  shared-host-automation
   terraform-oci-modules
 )
 
@@ -54,7 +55,7 @@ expected_actions_contexts() {
     github-pipeline-templates)
       printf '%s\n' '["Validate OCI bootstrap workflow / Terraform OCI bootstrap","Validate reusable workflow / Terraform validation"]'
       ;;
-    jenkins-controller-automation | jenkins-pipeline-templates | monitoring-stack-automation)
+    jenkins-controller-automation | jenkins-pipeline-templates | monitoring-stack-automation | shared-host-automation)
       printf '%s\n' '["validate"]'
       ;;
     terraform-oci-modules)
@@ -77,6 +78,21 @@ jenkins_contexts() {
 
 status_check_route() {
   printf 'repos/%s/%s/branches/main/protection/required_status_checks\n' "$owner" "$1"
+}
+
+protection_route() {
+  printf 'repos/%s/%s/branches/main/protection\n' "$owner" "$1"
+}
+
+branch_route() {
+  printf 'repos/%s/%s/branches/main\n' "$owner" "$1"
+}
+
+read_branch() {
+  gh api \
+    -H 'Accept: application/vnd.github+json' \
+    -H 'X-GitHub-Api-Version: 2022-11-28' \
+    "$(branch_route "$1")"
 }
 
 read_protection() {
@@ -124,19 +140,32 @@ validate_current_contexts() {
 
 declare -a strict_values=()
 declare -a current_context_values=()
+declare -a protected_values=()
 
 for repository in "${repositories[@]}"; do
-  protection=$(read_protection "$repository")
-  strict=$(jq -er '.strict | if type == "boolean" then tostring else error("strict must be boolean") end' <<<"$protection")
-  current_contexts=$(jq -c '.contexts | sort' <<<"$protection")
+  branch=$(read_branch "$repository")
+  protected=$(jq -er '.protected | if type == "boolean" then tostring else error("protected must be boolean") end' <<<"$branch")
   desired_contexts=$(desired_contexts_for_action "$repository" | normalize_contexts)
 
-  validate_current_contexts "$repository" "$current_contexts"
+  if [[ "$protected" == "true" ]]; then
+    protection=$(read_protection "$repository")
+    strict=$(jq -er '.strict | if type == "boolean" then tostring else error("strict must be boolean") end' <<<"$protection")
+    current_contexts=$(jq -c '.contexts | sort' <<<"$protection")
+    validate_current_contexts "$repository" "$current_contexts"
+  elif [[ "$repository" == "shared-host-automation" && "$action" != "rollback" ]]; then
+    strict=true
+    current_contexts='[]'
+  else
+    printf 'Branch protection is unavailable for %s\n' "$repository" >&2
+    exit 1
+  fi
+
+  protected_values+=("$protected")
   strict_values+=("$strict")
   current_context_values+=("$current_contexts")
 
-  printf 'repository=%s strict=%s current=%s desired=%s\n' \
-    "$repository" "$strict" "$current_contexts" "$desired_contexts"
+  printf 'repository=%s protected=%s strict=%s current=%s desired=%s\n' \
+    "$repository" "$protected" "$strict" "$current_contexts" "$desired_contexts"
 
   if [[ "$action" == "apply" ]]; then
     if ! read_recent_jenkins_status "$repository" >/dev/null; then
@@ -155,9 +184,65 @@ fi
 
 for index in "${!repositories[@]}"; do
   repository="${repositories[$index]}"
+  protected="${protected_values[$index]}"
   strict="${strict_values[$index]}"
   current_contexts="${current_context_values[$index]}"
   desired_contexts=$(desired_contexts_for_action "$repository" | normalize_contexts)
+
+  if [[ "$protected" == "false" ]]; then
+    payload=$(jq -nc --argjson contexts "$desired_contexts" '{
+      required_status_checks: {strict: true, contexts: $contexts},
+      enforce_admins: true,
+      required_pull_request_reviews: {
+        dismiss_stale_reviews: true,
+        require_code_owner_reviews: false,
+        required_approving_review_count: 0,
+        require_last_push_approval: false
+      },
+      restrictions: null,
+      required_linear_history: true,
+      allow_force_pushes: false,
+      allow_deletions: false,
+      block_creations: false,
+      required_conversation_resolution: true,
+      lock_branch: false,
+      allow_fork_syncing: false
+    }')
+    updated_protection=$(
+      printf '%s' "$payload" |
+        gh api \
+          --method PUT \
+          -H 'Accept: application/vnd.github+json' \
+          -H 'X-GitHub-Api-Version: 2022-11-28' \
+          "$(protection_route "$repository")" \
+          --input -
+    )
+    updated_strict=$(jq -er '.required_status_checks.strict | if type == "boolean" then tostring else error("strict must be boolean") end' <<<"$updated_protection")
+    updated_contexts=$(jq -c '.required_status_checks.contexts | sort' <<<"$updated_protection")
+
+    if [[ "$updated_strict" != "true" || "$updated_contexts" != "$desired_contexts" ]]; then
+      printf 'GitHub returned unexpected protection for %s\n' "$repository" >&2
+      exit 1
+    fi
+
+    jq -e '
+      .enforce_admins.enabled == true and
+      .required_pull_request_reviews.dismiss_stale_reviews == true and
+      .required_pull_request_reviews.require_code_owner_reviews == false and
+      .required_pull_request_reviews.required_approving_review_count == 0 and
+      .required_pull_request_reviews.require_last_push_approval == false and
+      .required_linear_history.enabled == true and
+      .allow_force_pushes.enabled == false and
+      .allow_deletions.enabled == false and
+      .block_creations.enabled == false and
+      .required_conversation_resolution.enabled == true and
+      .lock_branch.enabled == false and
+      .allow_fork_syncing.enabled == false
+    ' <<<"$updated_protection" >/dev/null
+
+    printf 'required_checks=%s state=created\n' "$repository"
+    continue
+  fi
 
   if [[ "$current_contexts" == "$desired_contexts" ]]; then
     printf 'required_checks=%s state=unchanged\n' "$repository"

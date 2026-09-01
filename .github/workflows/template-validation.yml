@@ -60,6 +60,9 @@ jobs:
       - name: Test ordered secret arguments
         run: bash tests/test-run-command-secret-order.sh
 
+      - name: Test required check reconciliation
+        run: bash tests/test-required-check-reconciliation.sh
+
   validate-oci-bootstrap-template:
     name: Validate OCI bootstrap workflow
     uses: ./.github/workflows/terraform-oci-bootstrap.yml

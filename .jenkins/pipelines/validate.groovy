@@ -9,5 +9,6 @@ repositoryValidationPipeline(
     shellSearchPath: 'scripts',
     terraformDirectories: ['tests/fixtures/terraform-basic'],
     validationScript: 'tests/test-run-command-secret-order.sh',
+    validationCommands: ['bash tests/test-required-check-reconciliation.sh'],
     validateWorkflows: true
 )

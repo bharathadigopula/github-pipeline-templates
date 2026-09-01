@@ -48,7 +48,7 @@ SUPPORT SCRIPTS
 
 Reusable workflows check out the consumer repository by default. The OCI bootstrap workflow therefore checks out this template repository separately at `template_ref` into `.pipeline-templates` before invoking its scripts.
 
-Jenkins validates this repository from `.jenkins/pipelines/validate.groovy` using `jenkins-pipeline-templates v1.3.0`. The job runs on the `platform` agent, enables ANSI console rendering, and performs shell, workflow, and repository validation without deployment credentials.
+Jenkins validates this repository from `.jenkins/pipelines/validate.groovy` using `jenkins-pipeline-templates v1.4.0`. The job runs on the `platform` agent, enables ANSI console rendering, publishes `continuous-integration/jenkins`, and performs shell, workflow, and repository validation without deployment credentials. The retained GitHub Actions validation workflow also runs on pull requests and `main` and supports manual dispatch.
 
 <!--
 ==============================================================================
@@ -250,7 +250,7 @@ RELEASE POLICY
 - Consumers use immutable release tags, never `main`.
 - The workflow reference and `template_ref` must use the same release tag.
 - Version tags cannot be updated or deleted.
-- Changes to `main` require pull requests and successful template validation.
+- Changes to `main` require pull requests and a successful `continuous-integration/jenkins` check.
 - Action dependencies are pinned to full commit SHAs and maintained by Dependabot.
 
-Jenkins shared-library templates belong in a separate `jenkins-pipeline-templates` repository when that implementation begins.
+Jenkins shared-library templates are versioned in the separate `jenkins-pipeline-templates` repository. This repository retains GitHub Actions validation and reusable recovery workflows alongside Jenkins validation.
